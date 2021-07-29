@@ -38,35 +38,48 @@ type DiskOptions struct {
 	// it will enable filesystem atomic writes by writing temporary files to that location before being moved to BasePath.
 	// Note that TempDir MUST be on the same device/partition as BasePath.
 	TempDir string
+	// Enable sorting of keys in memory.
+	SortKeys bool
+	// Function that will be used to sort the keys when SortKeys is true.
+	// Defaults to alphabetic sorting.
+	SortOrderFunc OrderFunc
 }
 
 func New(options *DiskOptions) *YamlDb {
+	diskOptions := diskv.Options{
+		BasePath:     options.BasePath,
+		CacheSizeMax: options.CacheSizeMax,
+		AdvancedTransform: func(key string) *diskv.PathKey {
+			if options.AppendExtension && !strings.HasSuffix(key, extension) {
+				key += extension
+			}
+			split := strings.Split(key, "/")
+			lastIndex := len(split) - 1
+			return &diskv.PathKey{
+				Path:     split[:lastIndex],
+				FileName: split[lastIndex],
+			}
+		},
+		InverseTransform: func(pathKey *diskv.PathKey) string {
+			if options.AppendExtension && !strings.HasSuffix(pathKey.FileName, extension) {
+				pathKey.FileName += extension
+			}
+			return path.Join(strings.Join(pathKey.Path, "/"), pathKey.FileName)
+		},
+		Compression: getCompression(options.Compression),
+		PathPerm:    options.Permissions.Path,
+		FilePerm:    options.Permissions.File,
+		TempDir:     options.TempDir,
+	}
+	if options.SortKeys {
+		diskOptions.Index = &diskv.BTreeIndex{}
+		diskOptions.IndexLess = OrderAlphabetically
+		if f := options.SortOrderFunc; f != nil {
+			diskOptions.IndexLess = diskv.LessFunction(f)
+		}
+	}
 	return &YamlDb{
-		Disk: diskv.New(diskv.Options{
-			BasePath:     options.BasePath,
-			CacheSizeMax: options.CacheSizeMax,
-			AdvancedTransform: func(key string) *diskv.PathKey {
-				if options.AppendExtension && !strings.HasSuffix(key, extension) {
-					key += extension
-				}
-				split := strings.Split(key, "/")
-				lastIndex := len(split) - 1
-				return &diskv.PathKey{
-					Path:     split[:lastIndex],
-					FileName: split[lastIndex],
-				}
-			},
-			InverseTransform: func(pathKey *diskv.PathKey) string {
-				if options.AppendExtension && !strings.HasSuffix(pathKey.FileName, extension) {
-					pathKey.FileName += extension
-				}
-				return path.Join(strings.Join(pathKey.Path, "/"), pathKey.FileName)
-			},
-			Compression: getCompression(options.Compression),
-			PathPerm:    options.Permissions.Path,
-			FilePerm:    options.Permissions.File,
-			TempDir:     options.TempDir,
-		}),
+		Disk: diskv.New(diskOptions),
 	}
 }
 
@@ -208,4 +221,22 @@ func (db *YamlDb) IterateSerialized(prefix string, out interface{}, callback fun
 		}
 		return callback(out)
 	})
+}
+
+// GetOrderedKeys returns all keys - or those with given prefix - in order when SortKeys is enabled.
+// Specify how many keys should be fetched from the underlying Index at a time through the chunks parameter.
+// You can also start querying from a specific key.
+func (db *YamlDb) GetOrderedKeys(prefix string, from string, chunks int) []string {
+	var keysOrdered []string
+
+	for keys := db.Disk.Index.Keys(from, chunks); len(keys) != 0; {
+		for _, key := range keys {
+			if strings.HasPrefix(key, prefix) {
+				keysOrdered = append(keysOrdered, key)
+			}
+		}
+		keys = db.Disk.Index.Keys(keys[len(keys)-1], chunks+1)
+	}
+
+	return keysOrdered
 }

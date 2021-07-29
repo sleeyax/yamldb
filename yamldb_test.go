@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -179,6 +180,59 @@ func TestYamlDb_IterateSerialized(t *testing.T) {
 	})
 
 	if err != nil || !ok {
+		t.FailNow()
+	}
+}
+
+func TestYamlDb_GetOrderedKeys(t *testing.T) {
+	reverse := func(s []string) {
+		for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+			s[i], s[j] = s[j], s[i]
+		}
+	}
+
+	db := New(&DiskOptions{
+		BasePath:        "./test-data",
+		AppendExtension: false,
+		SortKeys:        true,
+		SortOrderFunc:   OrderAlphabeticallyReversed,
+	})
+	defer db.PurgeAll()
+
+	expected := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p"}
+	for _, key := range expected {
+		if err := db.WriteRaw(key, []byte(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reverse(expected)
+	actual := db.GetOrderedKeys("", "", 10)
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.FailNow()
+	}
+}
+
+func TestYamlDb_GetOrderedKeys2(t *testing.T) {
+	db := New(&DiskOptions{
+		BasePath:        "./test-data",
+		AppendExtension: false,
+		SortKeys:        true,
+		SortOrderFunc:   OrderAlphabetically,
+	})
+	defer db.PurgeAll()
+
+	for _, key := range []string{"a", "b", "c", "sub/a", "sub/b", "sub/c", "x", "y", "z"} {
+		if err := db.WriteRaw(key, []byte(key)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	expected := []string{"sub/a", "sub/b", "sub/c"}
+	actual := db.GetOrderedKeys("sub/", "", 10)
+
+	if !reflect.DeepEqual(actual, expected) {
 		t.FailNow()
 	}
 }

@@ -30,11 +30,13 @@ func getUserSchema() (Schema, *YamlDb, error) {
 	// write user schema
 	err := db.Write(userKey, Schema{
 		Key: userKey,
-		Reference: &SchemaReference{
-			Key: postKey, // references the post below
-			Constraints: Constraints{
-				Delete: Cascade,
-				Update: Cascade,
+		References: []*SchemaReference{
+			{
+				Key: postKey, // references the post below
+				Constraints: Constraints{
+					Delete: Cascade,
+					Update: Cascade,
+				},
 			},
 		},
 		Data: User{

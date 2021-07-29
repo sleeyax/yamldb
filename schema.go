@@ -1,7 +1,6 @@
 package yamldb
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -17,7 +16,9 @@ const (
 )
 
 var (
-	UpdateRestrictedError = errors.New("can't update because there's still a reference to another resource (blocked by constraint)")
+	restrictedErrorFmt    = "can't %s because there's still a reference to another resource (blocked by constraint)"
+	UpdateRestrictedError = fmt.Errorf(restrictedErrorFmt, "update")
+	DeleteRestrictedError = fmt.Errorf(restrictedErrorFmt, "delete")
 )
 
 type Constraints struct {
@@ -48,8 +49,8 @@ type Schema struct {
 	// as it will later be used by other Schemas to reference this one.
 	Key string
 
-	// Reference is a link to another Schema.
-	Reference *SchemaReference
+	// References is a link to another Schema.
+	References []*SchemaReference
 
 	// Inner YAML data to store.
 	Data interface{}
@@ -57,22 +58,26 @@ type Schema struct {
 
 // Delete deletes the schema and file on disk while also triggering any set constraints.
 func (s *Schema) Delete(db *YamlDb) error {
-	if s.Reference != nil && db.Has(s.Reference.Key) {
-		switch s.Reference.Constraints.Delete {
-		case Cascade:
-			if err := db.Delete(s.Reference.Key); err != nil {
+	for _, ref := range s.References {
+		if db.Has(ref.Key) {
+			switch ref.Constraints.Delete {
+			case Cascade:
+				if err := db.Delete(ref.Key); err != nil {
+					return err
+				}
+			case Restrict:
+				return DeleteRestrictedError
+			case NoAction:
+			default:
+				break
+			}
+		}
+
+		if db.Has(s.Key) {
+			if err := db.Delete(s.Key); err != nil {
 				return err
 			}
-		case Restrict:
-			return fmt.Errorf("can't delete because there's still a reference to another resource (blocked by constraint)")
-		case NoAction:
-		default:
-			break
 		}
-	}
-
-	if db.Has(s.Key) {
-		return db.Delete(s.Key)
 	}
 
 	return nil
@@ -80,11 +85,11 @@ func (s *Schema) Delete(db *YamlDb) error {
 
 // Update changes this and referenced schema key while also triggering any set constraints.
 func (s *Schema) Update(db *YamlDb, updatedKey string, onUpdate func(schema *Schema)) error {
-	if s.Reference != nil {
-		if !db.Has(s.Reference.Key) {
-			return fmt.Errorf("old reference to %s not found", s.Reference.Key)
+	for _, ref := range s.References {
+		if !db.Has(ref.Key) {
+			return fmt.Errorf("old reference to %s not found", ref.Key)
 		}
-		switch s.Reference.Constraints.Update {
+		switch ref.Constraints.Update {
 		case Cascade:
 			// TODO: link back to referenced table somehow (probably gonna need reflection) and actually update the 'foreign key' to the new key
 			fallthrough
@@ -94,13 +99,18 @@ func (s *Schema) Update(db *YamlDb, updatedKey string, onUpdate func(schema *Sch
 		default:
 			break
 		}
+
+		err := db.Update(s.Key, s, func(i interface{}) {
+			schema := i.(*Schema)
+			schema.Key = updatedKey
+			if onUpdate != nil {
+				onUpdate(schema)
+			}
+		})
+		if err != nil {
+			return err
+		}
 	}
 
-	return db.Update(s.Key, s, func(i interface{}) {
-		schema := i.(*Schema)
-		schema.Key = updatedKey
-		if onUpdate != nil {
-			onUpdate(schema)
-		}
-	})
+	return nil
 }

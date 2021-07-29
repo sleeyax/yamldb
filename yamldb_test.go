@@ -8,9 +8,11 @@ import (
 	"testing"
 )
 
+const basePath = "./test-data"
+
 func newYamlDb() *YamlDb {
 	return New(&DiskOptions{
-		BasePath:        "test-data",
+		BasePath:        basePath,
 		AppendExtension: true,
 	})
 }
@@ -25,7 +27,7 @@ type Mock struct {
 
 func TestYamlDb_WriteRaw(t *testing.T) {
 	db := New(&DiskOptions{
-		BasePath:        "./test-data",
+		BasePath:        basePath,
 		AppendExtension: false,
 	})
 	defer db.PurgeAll()
@@ -192,7 +194,7 @@ func TestYamlDb_GetOrderedKeys(t *testing.T) {
 	}
 
 	db := New(&DiskOptions{
-		BasePath:        "./test-data",
+		BasePath:        basePath,
 		AppendExtension: false,
 		SortKeys:        true,
 		SortOrderFunc:   OrderAlphabeticallyReversed,
@@ -216,7 +218,7 @@ func TestYamlDb_GetOrderedKeys(t *testing.T) {
 
 func TestYamlDb_GetOrderedKeys2(t *testing.T) {
 	db := New(&DiskOptions{
-		BasePath:        "./test-data",
+		BasePath:        basePath,
 		AppendExtension: false,
 		SortKeys:        true,
 		SortOrderFunc:   OrderAlphabetically,

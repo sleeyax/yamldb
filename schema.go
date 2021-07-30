@@ -13,6 +13,8 @@ const (
 	Restrict Action = "restrict"
 	// NoAction doesn't touch the referenced Schema when any of the constraints are triggered.
 	NoAction Action = "no action"
+	// Custom calls a user provided function when any of the constraints are triggered.
+	Custom Action = "custom"
 )
 
 var (
@@ -24,8 +26,12 @@ var (
 type Constraints struct {
 	// Update triggers specified Action when Schema Data is modified.
 	Update Action
+	// OnUpdate is called when the Update Action equals Custom.
+	OnUpdate func()
 	// Delete triggers specified Action when this Schema gets deleted.
 	Delete Action
+	// OnDelete is called when the Delete Action equals Custom.
+	OnDelete func()
 }
 
 type SchemaReference struct {
@@ -61,6 +67,8 @@ func (s *Schema) Delete(db *YamlDb) error {
 	for _, ref := range s.References {
 		if db.Has(ref.Key) {
 			switch ref.Constraints.Delete {
+			case Custom:
+				ref.Constraints.OnDelete()
 			case Cascade:
 				if err := db.Delete(ref.Key); err != nil {
 					return err
@@ -90,6 +98,8 @@ func (s *Schema) Update(db *YamlDb, updatedKey string, onUpdate func(schema *Sch
 			return fmt.Errorf("old reference to %s not found", ref.Key)
 		}
 		switch ref.Constraints.Update {
+		case Custom:
+			ref.Constraints.OnUpdate()
 		case Cascade:
 			// TODO: link back to referenced table somehow (probably gonna need reflection) and actually update the 'foreign key' to the new key
 			fallthrough

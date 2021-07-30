@@ -18,7 +18,7 @@ package main
 
 import (
 	"github.com/sleeyax/yamldb"
-	"log"
+	"fmt"
 )
 
 type MyData struct {
@@ -36,20 +36,15 @@ func main() {
 	
 	// write some data
 	// YAML will be written to: ./data/subdir/mykey.yaml
-	err := db.Write("subdir/mykey", MyData{
+	db.Write("subdir/mykey", MyData{
 		Ok:    true,
 		Value: "hello world!",
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
 	
 	// read data back into our struct
 	var out MyData
-	if err = db.Read("subdir/mykey", &out); err != nil {
-		log.Fatal(err)
-	}
+	db.Read("subdir/mykey", &out)
 	
-	log.Println(out.Value)
+	fmt.Println(out.Value)
 }
 ```
